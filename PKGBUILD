@@ -7,7 +7,7 @@ url="https://github.com/slow-cat/holdown"
 license=('MIT' 'Apache')
 depends=()
 makedepends=('rust' 'cargo' 'git')
-source=("$pkgname::git+$url.git#tag=v$pkgver")
+source=()
 sha256sums=('SKIP')
 
 build() {
