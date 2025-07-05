@@ -7,15 +7,14 @@ url="https://github.com/slow-cat/holdown"
 license=('MIT' 'Apache')
 depends=()
 makedepends=('rust' 'cargo' 'git')
-source=("git+https://github.com/slow-cat/holdown.git")
-sha256sums=('SKIP')
+source=()
+sha256sums=()
 
 build() {
-    cd "$srcdir/holdown"
     cargo build --release
 }
 
 package() {
-    install -Dm755 "$srcdir/holdown/target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm755 "../target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
 }
 
