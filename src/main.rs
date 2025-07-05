@@ -17,17 +17,14 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 仮想マウスデバイス（右クリックのみ対応）を作成してArc<Mutex<>>で包む
     let dev = Arc::new(Mutex::new(create_virtual_mouse()?));
 
-    // libinput debug-events の起動（イベント監視）
     let device_path = find_touchpad_event().await.unwrap_or_else(|| {
         eprintln!("Touchpad device not found");
         std::process::exit(1);
     });
     let mut lines = spawn_libinput(&device_path).await?;
 
-    // 共有状態
     let right_pressed = Arc::new(Mutex::new(false));
     let scrolling = Arc::new(Mutex::new(false));
     let last_scroll_time = Arc::new(Mutex::new(Instant::now()));
@@ -71,7 +68,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// 仮想マウス（右クリックのみ）作成関数
 fn create_virtual_mouse() -> Result<VirtualDevice> {
     let mut keys = AttributeSet::<KeyCode>::new();
     keys.insert(KeyCode::BTN_RIGHT);
@@ -83,7 +79,6 @@ fn create_virtual_mouse() -> Result<VirtualDevice> {
     Ok(dev)
 }
 
-/// libinput debug-events プロセス起動し出力の行列を返す
 async fn spawn_libinput(
     device_path: &str,
 ) -> Result<tokio::io::Lines<BufReader<tokio::process::ChildStdout>>> {
@@ -99,7 +94,6 @@ async fn spawn_libinput(
     Ok(reader.lines())
 }
 
-/// GESTURE_HOLD_BEGIN イベント処理
 async fn handle_gesture_hold_begin(
     line: &str,
     dev: &Arc<Mutex<VirtualDevice>>,
@@ -109,11 +103,9 @@ async fn handle_gesture_hold_begin(
 ) -> Result<()> {
     if let Some(finger_count) = extract_finger_count(line) {
         if finger_count == 2 {
-            // スクロール終了待機タスクがあればキャンセル
             if let Some(handle) = scroll_wait_task.lock().unwrap().take() {
                 handle.abort();
             }
-            // 右クリックが押されていなければ押す
             let mut pressed = right_pressed.lock().unwrap();
             if !*pressed {
                 let mut dev_lock = dev.lock().unwrap();
@@ -121,14 +113,12 @@ async fn handle_gesture_hold_begin(
                 *pressed = true;
                 println!("Right BTN down");
             }
-            // スクロールフラグリセット
             *scrolling.lock().unwrap() = false;
         }
     }
     Ok(())
 }
 
-/// GESTURE_HOLD_END イベント処理
 async fn handle_gesture_hold_end(
     line: &str,
     dev: &Arc<Mutex<VirtualDevice>>,
@@ -141,7 +131,6 @@ async fn handle_gesture_hold_end(
     if let Some(finger_count) = extract_finger_count(line) {
         if finger_count == 2 {
             if cancelled {
-                // スクロール終了待機タスクを開始
                 start_scroll_wait_task(
                     Arc::clone(dev),
                     Arc::clone(right_pressed),
@@ -151,7 +140,6 @@ async fn handle_gesture_hold_end(
                 )
                 .await;
             } else {
-                // キャンセルなし → 即右クリックUP
                 if let Some(handle) = scroll_wait_task.lock().unwrap().take() {
                     handle.abort();
                 }
@@ -192,12 +180,10 @@ async fn start_scroll_wait_task(
     last_scroll_time: Arc<Mutex<Instant>>,
     scroll_wait_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 ) {
-    // 既存のタスクがあればキャンセル
     if let Some(handle) = scroll_wait_task.lock().unwrap().take() {
         handle.abort();
     }
 
-    // Arc をクローンして move に渡す
     let dev_clone = Arc::clone(&dev);
     let right_pressed_clone = Arc::clone(&right_pressed);
     let scrolling_clone = Arc::clone(&scrolling);
@@ -225,16 +211,13 @@ async fn start_scroll_wait_task(
             }
             sleep(Duration::from_millis(100)).await;
         }
-        // タスク終了時に自身のハンドルをクリア
         *scroll_wait_task_clone.lock().unwrap() = None;
     });
 
-    // ここは lock を外側で取り直すため問題なし
     *scroll_wait_task.lock().unwrap() = Some(handle);
 }
 
 
-/// POINTER_SCROLL_FINGER イベント処理（スクロール状態フラグを立て、タイムスタンプ更新）
 async fn handle_pointer_scroll_finger(
     scrolling: &Arc<Mutex<bool>>,
     last_scroll_time: &Arc<Mutex<Instant>>,
@@ -243,12 +226,10 @@ async fn handle_pointer_scroll_finger(
     *last_scroll_time.lock().unwrap() = Instant::now();
 }
 
-/// 行末の数字から指の本数を取得
 fn extract_finger_count(line: &str) -> Option<u32> {
     line.trim().chars().last()?.to_digit(10)
 }
 
-/// ボタン押下・離すイベントを仮想マウスに送信
 fn send_btn(dev: &mut VirtualDevice, key: KeyCode, pressed: bool) -> Result<()> {
     let event = InputEvent::new(EventType::KEY.0, key.0, if pressed { 1 } else { 0 });
     dev.emit(&[event])?;
