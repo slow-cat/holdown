@@ -1,5 +1,5 @@
 pkgname="holdown"
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Support the 'right hold down' function on laptops as well"
 arch=('x86_64')

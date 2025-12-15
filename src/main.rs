@@ -245,15 +245,25 @@ async fn find_touchpad_event() -> Result<String, FindTouchpadError> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut it = stdout.lines();
 
-    for line in stdout.lines() {
+    while let Some(line) = it.next() {
         if line.contains("Device:") && line.contains("Touchpad") {
-            println!("{}", line);
-            if let Some(next_line) = stdout.lines().skip_while(|l| *l != line).nth(1) {
-                println!("{}", next_line);
+            eprintln!("{}", line);
+            if let Some(next_line) = it.next() {
+                // eprint!("{:?}", next_line);
                 if let Some(path) = next_line.trim().strip_prefix("Kernel:") {
-                    println!("{}", path);
-                    return Ok(path.trim().to_string());
+                    eprintln!("{}", path.trim());
+                    for _ in 0..4 {
+                        let __ = it.next();
+                        // eprint!("{:?}", __);
+                    }
+                    if let Some(cap_line) = it.next() {
+                        if cap_line.contains("gesture") {
+                            return Ok(path.trim().to_string());
+                        }
+                    }
+                    break;
                 }
             }
         }
