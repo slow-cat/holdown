@@ -7,14 +7,16 @@ url="https://github.com/slow-cat/holdown"
 license=('MIT' 'Apache')
 depends=('libinput' 'libinput-tools')
 makedepends=('rust' 'cargo' 'git')
-source=()
-sha256sums=()
+source=("$pkgname-$pkgver::git+https://github.com/slow-cat/holdown.git")
+sha256sums=(SKIP)
 
 build() {
+    cd "$srcdir/$pkgname-$pkgver"
     cargo build --release
 }
 
 package() {
-    install -Dm755 "../target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
 }
 
