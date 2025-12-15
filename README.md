@@ -18,4 +18,6 @@ makepkg -si
 sudo holdown
 ```
 sudo権限がなければevdevに直接アクセスすることができないので必要っぽい。
-wayland linux環境以外で動かないかもしれない。
+
+## 追記
+libinputのアップデートを行ったっところどうやらlibinputのデバック用ツールが分離されたようで動かなくなっていたので修正した

@@ -1,8 +1,5 @@
 use anyhow::Result;
-use evdev::{
-    uinput::{VirtualDevice, VirtualDeviceBuilder},
-    AttributeSet, InputEvent, EventType, KeyCode,
-};
+use evdev::{AttributeSet, EventType, InputEvent, KeyCode, uinput::VirtualDevice};
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -10,17 +7,30 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
-    sync::Mutex as TokioMutex,
     task::JoinHandle,
     time::sleep,
 };
-
+#[derive(Debug)]
+enum FindTouchpadError {
+    LibinputNotFound(std::io::Error),
+    PermissionDenied(String),
+    TouchpadNotFound,
+}
+impl std::fmt::Display for FindTouchpadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FindTouchpadError::LibinputNotFound(e) => write!(f, "failed to run libinput: {e}"),
+            FindTouchpadError::PermissionDenied(s) => write!(f, "permission denied: {s}"),
+            FindTouchpadError::TouchpadNotFound => write!(f, "touchpad device not found"),
+        }
+    }
+}
 #[tokio::main]
 async fn main() -> Result<()> {
     let dev = Arc::new(Mutex::new(create_virtual_mouse()?));
 
-    let device_path = find_touchpad_event().await.unwrap_or_else(|| {
-        eprintln!("Touchpad device not found");
+    let device_path = find_touchpad_event().await.unwrap_or_else(|e| {
+        eprintln!("{}", e);
         std::process::exit(1);
     });
     let mut lines = spawn_libinput(&device_path).await?;
@@ -34,14 +44,8 @@ async fn main() -> Result<()> {
 
     while let Some(line) = lines.next_line().await? {
         if line.contains("GESTURE_HOLD_BEGIN") {
-            handle_gesture_hold_begin(
-                &line,
-                &dev,
-                &right_pressed,
-                &scrolling,
-                &scroll_wait_task,
-            )
-            .await?;
+            handle_gesture_hold_begin(&line, &dev, &right_pressed, &scrolling, &scroll_wait_task)
+                .await?;
         } else if line.contains("GESTURE_HOLD_END") {
             handle_gesture_hold_end(
                 &line,
@@ -54,14 +58,8 @@ async fn main() -> Result<()> {
             .await?;
         } else if line.contains("POINTER_SCROLL_FINGER") {
             handle_pointer_scroll_finger(&scrolling, &last_scroll_time).await;
-        } else{
-            handle_scroll_terminated_by_other_gesture(
-                &dev,
-                &right_pressed,
-                &scroll_wait_task,
-            )?;
-
-
+        } else {
+            handle_scroll_terminated_by_other_gesture(&dev, &right_pressed, &scroll_wait_task)?;
         }
     }
 
@@ -72,7 +70,7 @@ fn create_virtual_mouse() -> Result<VirtualDevice> {
     let mut keys = AttributeSet::<KeyCode>::new();
     keys.insert(KeyCode::BTN_RIGHT);
 
-    let dev = VirtualDeviceBuilder::new()?
+    let dev = VirtualDevice::builder()?
         .name("gesture_hold_rightclick")
         .with_keys(&keys)?
         .build()?;
@@ -217,7 +215,6 @@ async fn start_scroll_wait_task(
     *scroll_wait_task.lock().unwrap() = Some(handle);
 }
 
-
 async fn handle_pointer_scroll_finger(
     scrolling: &Arc<Mutex<bool>>,
     last_scroll_time: &Arc<Mutex<Instant>>,
@@ -236,28 +233,30 @@ fn send_btn(dev: &mut VirtualDevice, key: KeyCode, pressed: bool) -> Result<()> 
     Ok(())
 }
 
-async fn find_touchpad_event() -> Option<String> {
+async fn find_touchpad_event() -> Result<String, FindTouchpadError> {
     let output = Command::new("libinput")
         .arg("list-devices")
         .output()
         .await
-        .ok()?; 
+        .map_err(FindTouchpadError::LibinputNotFound)?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.to_lowercase().contains("permission denied") {
+        return Err(FindTouchpadError::PermissionDenied(stderr.to_string()));
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     for line in stdout.lines() {
         if line.contains("Device:") && line.contains("Touchpad") {
-            println!("{}",line);
+            println!("{}", line);
             if let Some(next_line) = stdout.lines().skip_while(|l| *l != line).nth(1) {
-                println!("{}",next_line);
+                println!("{}", next_line);
                 if let Some(path) = next_line.trim().strip_prefix("Kernel:") {
-                    println!("{}",path);
-                    return Some(path.trim().to_string());
+                    println!("{}", path);
+                    return Ok(path.trim().to_string());
                 }
             }
-
         }
     }
-    None
+    Err(FindTouchpadError::TouchpadNotFound)
 }
-
