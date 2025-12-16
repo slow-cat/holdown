@@ -263,7 +263,7 @@ async fn find_touchpad_event() -> Result<String, FindTouchpadError> {
                             return Ok(path.trim().to_string());
                         }
                     }
-                    break;
+                    // break;
                 }
             }
         }
